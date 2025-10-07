@@ -54,6 +54,8 @@ This project explores whether Virtual Model Control can provide a simpler, compu
 To record the environment:
 ```bash
 pip freeze > requirements.txt
+```
+---
 
 ## References
 
@@ -64,3 +66,4 @@ pip freeze > requirements.txt
   howpublished = {\url{http://pybullet.org}},
   year         = {2016--2023}
 }
+
