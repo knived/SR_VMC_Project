@@ -1,0 +1,172 @@
+<?xml version="1.0"?>
+<robot name="space_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ========== GLOBAL PARAMS (edit freely) ========== -->
+  <!-- Base (spacecraft bus) geometry -->
+  <xacro:property name="base_size_x" value="0.7"/>
+  <xacro:property name="base_size_y" value="0.7"/>
+  <xacro:property name="base_size_z" value="0.7"/>
+  <xacro:property name="base_mass"   value="200.0"/>
+
+  <!-- Arm layout -->
+  <xacro:property name="link_count" value="6"/>          <!-- set 3..7 as you like -->
+  <!-- vectors of per-link params (index from 1) -->
+  <xacro:property name="L_1" value="0.30"/><xacro:property name="R_1" value="0.04"/><xacro:property name="M_1" value="7.0"/>
+  <xacro:property name="L_2" value="0.28"/><xacro:property name="R_2" value="0.04"/><xacro:property name="M_2" value="6.0"/>
+  <xacro:property name="L_3" value="0.25"/><xacro:property name="R_3" value="0.035"/><xacro:property name="M_3" value="5.0"/>
+  <xacro:property name="L_4" value="0.22"/><xacro:property name="R_4" value="0.03"/><xacro:property name="M_4" value="4.0"/>
+  <xacro:property name="L_5" value="0.18"/><xacro:property name="R_5" value="0.028"/><xacro:property name="M_5" value="3.0"/>
+  <xacro:property name="L_6" value="0.16"/><xacro:property name="R_6" value="0.025"/><xacro:property name="M_6" value="2.5"/>
+
+  <!-- joint limits/dynamics defaults -->
+  <xacro:property name="effort_lim"   value="60.0"/>
+  <xacro:property name="vel_lim"      value="2.5"/>
+  <xacro:property name="damping_def"  value="0.02"/>
+  <xacro:property name="friction_def" value="0.01"/>
+
+  <!-- ========== HELPER MACROS ========== -->
+
+  <!-- Inertial for a solid box (aligned with axes) -->
+  <xacro:macro name="inertial_box" params="mass sx sy sz">
+    <inertial>
+      <mass value="${mass}"/>
+      <!-- Ixx = 1/12 m (sy^2 + sz^2), etc. -->
+      <inertia ixx="${mass*(sy*sy + sz*sz)/12.0}"
+               iyy="${mass*(sx*sx + sz*sz)/12.0}"
+               izz="${mass*(sx*sx + sy*sy)/12.0}"
+               ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Inertial for a solid cylinder along +Z (URDF default) -->
+  <xacro:macro name="inertial_cylinder" params="mass length radius">
+    <!-- Izz = 1/2 m r^2 ; Ixx=Iyy = 1/12 m (3 r^2 + L^2) -->
+    <inertial>
+      <mass value="${mass}"/>
+      <inertia ixx="${mass*(3*radius*radius + length*length)/12.0}"
+               iyy="${mass*(3*radius*radius + length*length)/12.0}"
+               izz="${0.5*mass*radius*radius}"
+               ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- A cylindrical link + revolute joint to its parent -->
+  <!-- axis is one of: 1 0 0 | 0 1 0 | 0 0 1 -->
+  <xacro:macro name="arm_segment" params="
+      parent name length radius mass
+      joint_xyz joint_rpy
+      axis_x axis_y axis_z
+      lower upper
+    ">
+    <link name="${name}">
+      <xacro:inertial_cylinder mass="${mass}" length="${length}" radius="${radius}"/>
+      <visual>
+        <origin xyz="0 0 ${length/2.0}" rpy="0 0 0"/>
+        <geometry><cylinder radius="${radius}" length="${length}"/></geometry>
+        <material name="grey"><color rgba="0.7 0.7 0.7 1.0"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${length/2.0}" rpy="0 0 0"/>
+        <geometry><cylinder radius="${radius}" length="${length}"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${name}_joint" type="revolute">
+      <parent link="${parent}"/>
+      <child  link="${name}"/>
+      <origin xyz="${joint_xyz}" rpy="${joint_rpy}"/>
+      <axis xyz="${axis_x} ${axis_y} ${axis_z}"/>
+      <limit lower="${lower}" upper="${upper}" effort="${effort_lim}" velocity="${vel_lim}"/>
+      <dynamics damping="${damping_def}" friction="${friction_def}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- Massless frame helper (for sensors/thrusters/targets) -->
+  <xacro:macro name="frame" params="parent name xyz rpy">
+    <link name="${name}"/>
+    <joint name="${name}_fixed" type="fixed">
+      <parent link="${parent}"/>
+      <child  link="${name}"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- ========== BASE LINK ========== -->
+  <link name="base_link">
+    <xacro:inertial_box mass="${base_mass}" sx="${base_size_x}" sy="${base_size_y}" sz="${base_size_z}"/>
+    <visual>
+      <geometry><box size="${base_size_x} ${base_size_y} ${base_size_z}"/></geometry>
+      <material name="blue"><color rgba="0.2 0.4 0.8 1.0"/></material>
+    </visual>
+    <collision>
+      <geometry><box size="${base_size_x} ${base_size_y} ${base_size_z}"/></geometry>
+    </collision>
+  </link>
+
+  <!-- Some handy frames on the base (optional) -->
+  <xacro:frame parent="base_link" name="cam_link"       xyz="0.35 0 0.35" rpy="0 0 0"/>
+  <xacro:frame parent="base_link" name="docking_frame"  xyz="0.5 0 0"     rpy="0 0 0"/>
+  <xacro:frame parent="base_link" name="thruster_xp"    xyz="0.4 0 0"     rpy="0 1.5708 0"/>
+  <xacro:frame parent="base_link" name="thruster_xn"    xyz="-0.4 0 0"    rpy="0 -1.5708 0"/>
+
+  <!-- ========== ARM SEGMENTS (configurable) ========== -->
+  <!-- Joint layout: J1 (yaw Z) at top of base, then alternating pitch (Y) / roll (X) as example -->
+  <!-- You can change axes/origins to match your preferred kinematic chain. -->
+
+  <!-- Link 1 -->
+  <xacro:arm_segment parent="base_link" name="link_1"
+      length="${L_1}" radius="${R_1}" mass="${M_1}"
+      joint_xyz="0 0 ${base_size_z/2.0}" joint_rpy="0 0 0"
+      axis_x="0" axis_y="0" axis_z="1"
+      lower="-2.967" upper="2.967"/>
+
+  <!-- Link 2 -->
+  <xacro:arm_segment parent="link_1" name="link_2"
+      length="${L_2}" radius="${R_2}" mass="${M_2}"
+      joint_xyz="0 0 ${L_1}" joint_rpy="0 0 0"
+      axis_x="0" axis_y="1" axis_z="0"
+      lower="-2.356" upper="2.356"/>
+
+  <!-- Link 3 -->
+  <xacro:arm_segment parent="link_2" name="link_3"
+      length="${L_3}" radius="${R_3}" mass="${M_3}"
+      joint_xyz="0 0 ${L_2}" joint_rpy="0 0 0"
+      axis_x="1" axis_y="0" axis_z="0"
+      lower="-2.356" upper="2.356"/>
+
+  <!-- Link 4 (only used if link_count >= 4) -->
+  <xacro:if value="${link_count >= 4}">
+    <xacro:arm_segment parent="link_3" name="link_4"
+        length="${L_4}" radius="${R_4}" mass="${M_4}"
+        joint_xyz="0 0 ${L_3}" joint_rpy="0 0 0"
+        axis_x="0" axis_y="1" axis_z="0"
+        lower="-2.356" upper="2.356"/>
+  </xacro:if>
+
+  <!-- Link 5 -->
+  <xacro:if value="${link_count >= 5}">
+    <xacro:arm_segment parent="link_4" name="link_5"
+        length="${L_5}" radius="${R_5}" mass="${M_5}"
+        joint_xyz="0 0 ${L_4}" joint_rpy="0 0 0"
+        axis_x="1" axis_y="0" axis_z="0"
+        lower="-2.356" upper="2.356"/>
+  </xacro:if>
+
+  <!-- Link 6 -->
+  <xacro:if value="${link_count >= 6}">
+    <xacro:arm_segment parent="link_5" name="link_6"
+        length="${L_6}" radius="${R_6}" mass="${M_6}"
+        joint_xyz="0 0 ${L_5}" joint_rpy="0 0 0"
+        axis_x="0" axis_y="1" axis_z="0"
+        lower="-2.804" upper="2.804"/>
+  </xacro:if>
+
+  <!-- Simple tool flange / end-effector frame at the tip -->
+  <link name="ee_link"/>
+  <joint name="ee_fixed" type="fixed">
+    <parent link="${link_count >= 6 ? 'link_6' : (link_count >= 5 ? 'link_5' : (link_count >= 4 ? 'link_4' : 'link_3'))}"/>
+    <child  link="ee_link"/>
+    <origin xyz="0 0 ${ (link_count >= 6) ? L_6 : (link_count >= 5) ? L_5 : (link_count >= 4) ? L_4 : L_3 }" rpy="0 0 0"/>
+  </joint>
+
+</robot>

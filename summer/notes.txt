@@ -1,0 +1,90 @@
+---------------------------------------- QUICK START GUIDE ----------------------------------------
+INTRODUCTION
+
+    Bibtex Citation: 
+    @MISC{coumans2020,
+    author       = {Erwin Coumans and Yunfei Bai},
+    title        = {PyBullet: a Python module for physics simulation for games, robotics and machine learning},
+    howpublished = {\url{http://pybullet.org}},
+    year         = {2016--2023}
+    }
+
+    PyBullet (Python) → Bullet C API (C) → Bullet Physics Engine (C++)
+        Remote Control --> Translator --> Engine
+
+    Robot name: CHAPPIE
+
+    Laptop CPU and integrated GPU are limited for running parallel sims and ML
+    --> Use DIRECT to just get results, GUI to watch/debug
+        --> p.connect(p.DIRECT)
+    --> DIRECT is single thread, GUI uses multithreading to run physics and graphics in parallel
+
+    To load ready-made URDF directly, use p.setAdditionalSearchPath(pybullet_data.getDataPath())
+        Later can create local paths to own project URDF files p.setAdditionalSearchPath("path/to/CHAPPIE/")
+            Call URDF files with p.loadURDF("chappie.urdf")
+
+    Can connect to physics servers on remote machines using SHARED_MEMORY, UDP or TCP networking 
+        'resetSimulation' to remove all items, if forget to disconnect
+
+    OBJ2SDF is a Bullet SDK utility that automatically wraps your 3D .obj model into a valid SDF file
+        --> Can be simulated as a rigid body in PyBullet
+
+CONTROLLING A ROBOT
+
+    To get the number of joints, their info, and states use 
+        p.getNumJoints(objId)
+        p.getJointInfo(objId, jointIndex)
+        p.getJointState(objId, jointIndex)
+
+    To use position control mode, check the limits on the joint
+
+    To use velocity control mode, use something like below
+        p.setJointMotorControl2(bodyUniqueId=...,
+            jointIndex=..,
+            controlMode=p.VELOCITY_CONTROL,
+            targetVelocity = ...,
+            force = ...)
+
+    To step through simulation for n seconds use
+        for i in range (240*n):
+            p.stepSimulation()
+            time.sleep(1./240.)
+
+    To log motion use start/stopStateLogging
+        Generates a textfile that can be played back
+        STATE_LOGGING_VIDEO_MP4 for video recording
+        Look at playback examples to see how to implement
+
+INVERSE DYNAMICS & KINEMATICS
+
+calculateInverseDynamics ignores joint/link damping while forward dynamics includes them
+
+From inverse_kinematics.py example, 
+    if we set useSimulation=0, it sets the arm pose to be the IK result directly 
+    without using dynamic control. This can be used to test the IK result accuracy.
+
+---------------------------------------- URDF TUTORIALS ----------------------------------------
+STRUCTURE
+
+<?xml version="1.0"?>
+<robot name = "..."> 
+    <link name = "...">    
+        <visual> 
+        <collision>
+        <inertial>
+    </link>
+    <joint name = "..." type = "...">
+        <parent/> 
+        <child/>
+        <origin/>
+    </joint>
+</robot>
+
+XACRO to paramaterise URDF with constants and math
+    Common Trick 1: Use a name prefix to get two similarly named objects.
+    Common Trick 2: Use math to calculate joint origins. In the case that you change the size of 
+        your robot, changing a property with some math to calculate the joint offset will save a 
+        lot of trouble.
+    Common Trick 3: Using a reflect parameter, and setting it to 1 or -1. See how we use the 
+        reflect parameter to put the legs on either side of the body in the 
+        base_to_${prefix}_leg origin.
