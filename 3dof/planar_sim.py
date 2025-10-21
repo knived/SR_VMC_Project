@@ -41,25 +41,43 @@ while 1:
     com1 = com2
 
     # get q1 and q2
-    q1 = p.getJointStates(robot, 1)[0]
+    q1 = p.getJointState(robot, 1)[0]
     q2 = p.getJointState(robot, 2)[0]
 
+    com = [0.25 + 0.15*np.cos(q1) + 0.05*np.cos(q1 + q2), 
+            0.15*np.sin(q1) + 0.05*np.sin(q1 + q2)]
+    
+    # due to urdf coordinates (x, y, z) --> (-y, x, z)
+    com = [-com[1], com[0]]
+
     # find x1 and x2 in terms of q1 and q2
-    x1 = 0
-    x2 = 0
-    x = np.array([[x1], [x2]])
+    x1 = com1[0:1] - com
+    x2 = x1 + [-(0.3*np.sin(q1) + 0.3*np.sin(q1 + q2)), 
+                0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2)]
+    
+    x1 = np.array([[x1[0]], [x1[1]]])
+    x2 = np.array([[x2[0]], [x2[1]]])
 
     # define f1 and f2
-    k = 5
+    k = 10
     f1 = k*(x1 - x2)
     f2 = k*(x2 - x1)
-    f = np.array([[f1], [f2]])
 
     # find t1 and t2
-    t = np.array([[], []])
+    dx1dq1 = [0.15*np.cos(q1) + 0.05*np.cos(q1 + q2), 
+                0.15*np.sin(q1) - 0.05*np.sin(q1 + q2)]
+    dx1dq2 = [0.05*np.cos(q1 + q2), 0.05*np.sin(q1 +q2)]
+    dh1dqT = np.array([dx1dq1, dx1dq2])
+
+    dx2dq1 = dx1dq1 + np.array([-0.3*np.cos(q1) - 0.3*np.cos(q1 + q2),
+                        -0.3*np.sin(q1) - 0.3*np.sin(q1 + q2)])
+    dx2dq2 = dx1dq2 + np.array([-0.3*np.cos(q1 + q2), -0.3*np.sin(q1 +q2)])
+    dh2dqT = np.array([dx2dq1, dx2dq2])
+
+    t = np.matmul(dh1dqT, f1) + np.matmul(dh2dqT, f2)
 
     # control motors
-    p.setJointMotorControlArray(robot, [1, 2], p.TORQUE_CONTROL, forces = t)
+    p.setJointMotorControlArray(robot, [1, 2], p.TORQUE_CONTROL, forces = [t[0], t[1]])
 
     p.stepSimulation()
 
