@@ -1,0 +1,116 @@
+# --- simple kinematics sweep to sanity-check x1/x2 ---
+import os
+import pybullet as p
+import pybullet_data
+import numpy as np
+import imageio_ffmpeg
+import matplotlib.pyplot as plt
+import os
+from datetime import datetime
+import time
+
+p.connect(p.GUI)
+p.setRealTimeSimulation(0)
+p.setGravity(0,0,0)
+p.setAdditionalSearchPath(pybullet_data.getDataPath())
+planeId = p.loadURDF("plane.urdf", [0,0,-5], useFixedBase=True)
+
+flags = (
+    p.URDF_USE_INERTIA_FROM_FILE |
+    p.URDF_USE_SELF_COLLISION |
+    p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT  # or INCLUDE_PARENT if needed
+)
+robot = p.loadURDF("3dof/planar_real.urdf", useFixedBase=False, flags=flags)
+
+rng = np.random.default_rng(42)
+
+
+# tweak these to your robot
+EE_LINK_INDEX = 2          # end-effector (or distal link) index
+L1, L2 = 0.3, 0.3          # your planar link lengths
+Z_PLANE = 0.03             # your model's constant z for visuals
+
+def rand_pose_xy_yaw(xy_span=0.5):
+    x = rng.uniform(-xy_span, xy_span)
+    y = rng.uniform(-xy_span, xy_span)
+    yaw = rng.uniform(-np.pi, np.pi)  # planar yaw
+    quat = p.getQuaternionFromEuler([0, 0, yaw])
+    return [x, y, Z_PLANE], quat, yaw
+
+def rand_joints():
+    q1 = rng.uniform(-np.pi, np.pi)
+    q2 = rng.uniform(-np.pi, np.pi)
+    return q1, q2
+
+def predict_x1_x2_from_planar(pos, yaw, q1, q2, l1=L1, l2=L2):
+    """
+    Your scheme: correct joint angles by base yaw, then compute in world frame.
+    """
+
+    # x1 is the base projection in your plane
+    x1 = np.array([pos[0], pos[1], Z_PLANE])
+    x2 = [-(0.3*np.sin(q1) + 0.3*np.sin(q1 + q2)), 
+                0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2), 0]
+    
+    x2 = np.array([[x2[0]], [x2[1]], [0.03], [1]])
+
+    q0 = yaw
+    T02 = np.array([[np.cos(q0), -np.sin(q0), 0, float(x1[0])],
+                 [np.sin(q0), np.cos(q0), 0, float(x1[1])], 
+                 [0, 0, 1, 0],
+                 [0, 0, 0, 1]])
+    
+    x2w = np.matmul(T02, x2)
+
+    x2 = x2w[:-1]
+
+    return x1, x2
+
+def measure_x1_x2_from_pybullet(body_id, ee_link=EE_LINK_INDEX):
+    # x1_meas: base position (projected to your z plane)
+    base_pos, base_orn = p.getBasePositionAndOrientation(body_id)
+    x1_meas = np.array([base_pos[0], base_pos[1], Z_PLANE])
+
+    # x2_meas: link world position (adjust the link index if needed)
+    x2_world = p.getLinkState(body_id, ee_link, computeForwardKinematics=True)[0]
+    x2_meas = np.array([x2_world[0], x2_world[1], Z_PLANE])
+    return x1_meas, x2_meas
+
+N = 5                       # number of random tests
+err_x1 = []
+err_x2 = []
+
+# clear any previous lines
+p.removeAllUserDebugItems()
+
+for i in range(N):
+    # sample a pose and joints
+    pos, quat, yaw = rand_pose_xy_yaw(xy_span=0.6)
+    q1, q2 = rand_joints()
+
+    # reset base and joints (assuming joints 1 and 2 are your planar joints)
+    p.resetBasePositionAndOrientation(robot, pos, quat)
+    p.resetJointState(robot, 1, q1)
+    p.resetJointState(robot, 2, q2)
+    p.stepSimulation()
+
+    # predicted kinematics (your formulation)
+    x1_pred, x2_pred = predict_x1_x2_from_planar(pos, yaw, q1, q2, L1, L2)
+
+    # measured from pybullet
+    x1_meas, x2_meas = measure_x1_x2_from_pybullet(robot, EE_LINK_INDEX)
+
+    # accumulate errors (in metres)
+    err_x1.append(np.linalg.norm(x1_pred[:2] - x1_meas[:2]))
+    err_x2.append(np.linalg.norm(x2_pred[:2] - x2_meas[:2]))
+
+    # draw a short-lived line to visualize each test
+    p.addUserDebugLine(x1_pred, x2_pred, [0, 0, 0], lineWidth=2, lifeTime=1.0)
+    #p.addUserDebugLine(x1_meas, x2_meas, [0, 1, 0], lineWidth=1, lifeTime=1.0)
+    time.sleep(1)
+
+# report
+err_x1 = np.array(err_x1)
+err_x2 = np.array(err_x2)
+print(f"[x1] mean err = {err_x1.mean()*1000:.2f} mm | max err = {err_x1.max()*1000:.2f} mm")
+print(f"[x2] mean err = {err_x2.mean()*1000:.2f} mm | max err = {err_x2.max()*1000:.2f} mm")
