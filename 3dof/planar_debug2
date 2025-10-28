@@ -67,6 +67,10 @@ def predict_x1_x2_from_planar(pos, yaw, q1, q2, l1=L1, l2=L2):
     return x1, x2
 
 def measure_x1_x2_from_pybullet(body_id, ee_link=EE_LINK_INDEX):
+    """
+    Considers EE as final link com since no ee link is added
+    """
+
     # x1_meas: base position (projected to your z plane)
     base_pos, base_orn = p.getBasePositionAndOrientation(body_id)
     x1_meas = np.array([base_pos[0], base_pos[1], Z_PLANE])

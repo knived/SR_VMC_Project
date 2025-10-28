@@ -21,6 +21,14 @@ flags = (
 )
 robot = p.loadURDF("3dof/planar_real.urdf", useFixedBase=False, flags=flags)
 
+# get joint and link info
+# for i in range(0, p.getNumJoints(robot)):
+#     print(p.getJointInfo(robot, i))
+#     print(p.getJointState(robot, i))
+#     print(p.getLinkState(robot, i))
+#     print("---------------------------")
+# p.disconnect()
+
 # set intial position
 p.resetJointState(robot, 1, 3.14/4)
 p.resetJointState(robot, 2, 3.14/4)
@@ -50,57 +58,69 @@ x1_pt = [0, 0, 0]
 x2_pt = [0, 0, 0]
 line_id = p.addUserDebugLine(x1_pt, x2_pt, [1, 0, 0], lineWidth=2, lifeTime=0)
 
+marker_radius = 0.03
+vis_red  = p.createVisualShape(p.GEOM_SPHERE, radius=marker_radius, rgbaColor=[1,0,0,1])   # COM now
+vis_blue = p.createVisualShape(p.GEOM_SPHERE, radius=marker_radius, rgbaColor=[0,0,1,1])   # COM prev (optional)
+com_now  = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1,
+                             baseVisualShapeIndex=vis_red,  basePosition=com1)
+com_prev = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1,
+                             baseVisualShapeIndex=vis_blue, basePosition=com1)
 
-for t in range(freq*sim_time):
+
+for t in range(2):
     link_tot = (0, 0, 0)
     for i in range(p.getNumJoints(robot)):
         link_tot = np.add(link_tot, p.getLinkState(robot, i)[0])
     com2 = np.divide(link_tot, 3)
-    # print(com1)
     com1 = com2
-    # print(com2)
 
     # virtual mechanism calcs
     # get q1 and q2
     q1 = p.getJointState(robot, 1)[0]
     q2 = p.getJointState(robot, 2)[0]
-
-    com = [0.25 + 0.15*np.cos(q1) + 0.05*np.cos(q1 + q2), 
-            0.15*np.sin(q1) + 0.05*np.sin(q1 + q2)]
-    # print(com)
-
+    
+    # find x1, x2 and com in terms of q1 and q2
+    # assume base position and orinetation is measured
     pos, orn = p.getBasePositionAndOrientation(robot)
     orn2 = p.getEulerFromQuaternion(orn)
     q0 = orn2[2]
 
-    # due to urdf coordinates (x, y, z) --> (-y, x, z)
-    com = [-com[1], com[0], 0.03]
-    # print(com)
-    # print("------------")
-    
-    # find x1 and x2 in terms of q1 and q2
-    x1 = com1 - np.array(com)
+    # x1 in world frame
     x1 = np.array(pos)
+
+    # x2 in base frame
     x2 = [-(0.3*np.sin(q1) + 0.3*np.sin(q1 + q2)), 
-                0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2), 0]
+                0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2)]
     
+    # com in base frame
+    com = [-(0.15*np.sin(q1) + 0.05*np.sin(q1 + q2)), 
+           0.25 + 0.15*np.cos(q1) + 0.05*np.cos(q1 + q2)]
+    
+    # vectors
     x1 = np.array([[x1[0]], [x1[1]], [0.03]])
     x2 = np.array([[x2[0]], [x2[1]], [0.03], [1]])
+    com = np.array([[com[0]], [com[1]], [0.03], [1]])
 
+    # base frame to world transformation matrix (4x4)
     T02 = np.array([[np.cos(q0), -np.sin(q0), 0, float(x1[0])],
                  [np.sin(q0), np.cos(q0), 0, float(x1[1])], 
                  [0, 0, 1, 0],
                  [0, 0, 0, 1]])
     
+    # x2 and com to world vectors (4x1)
     x2w = np.matmul(T02, x2)
+    comw = np.matmul(T02, com)
 
+    # shorten vectors (3x1)
     x2 = x2w[:-1]
+    com = comw[:-1]
+    p.resetBasePositionAndOrientation(com_now,  com, [0,0,0,1])
 
     # define f1 and f2
     k = 5
     f1 = k*(x1 - x2)
     f2 = k*(x2 - x1)
-    p.addUserDebugLine([x1[0], x1[1], x1[2]+0.1], [x2[0], x2[1], x2[2]+0.1], [0, 0, 0], 1, 0)
+    p.addUserDebugLine(x1.flatten(), x2.flatten(), [0, 0, 0], 1, 1)
 
     time.sleep(3)
     # apply force

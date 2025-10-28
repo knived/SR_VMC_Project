@@ -56,16 +56,7 @@ flags = (
 )
 robot = p.loadURDF("3dof/planar_real.urdf", useFixedBase=False, flags=flags)
 
-# get joint and link info
-# for i in range(0, p.getNumJoints(robot)):
-#     print(p.getJointInfo(robot, i))
-#     print(p.getJointState(robot, i))
-#     print(p.getLinkState(robot, i))
-#     print("---------------------------")
-# p.disconnect()
-
 # set intial position
-p.resetJointState(robot, 0, 3.14/4)
 p.resetJointState(robot, 1, 3.14/4)
 p.resetJointState(robot, 2, 3.14/4)
 
@@ -132,12 +123,6 @@ x1_pt = [0, 0, 0]
 x2_pt = [0, 0, 0]
 line_id = p.addUserDebugLine(x1_pt, x2_pt, [1, 0, 0], lineWidth=2, lifeTime=0)
 
-t_hist = []
-q0_hist = []   
-q1_hist = []
-q2_hist = []  
-orn_hist = []
-
 for t in range(freq*sim_time):
     #camera
     if record_data:
@@ -160,8 +145,8 @@ for t in range(freq*sim_time):
     for i in range(p.getNumJoints(robot)):
         link_tot = np.add(link_tot, p.getLinkState(robot, i)[0])
     com2 = np.divide(link_tot, 3)
-    # p.addUserDebugLine(com1, com2, [1, 0, 0], 1, 0)
 
+    # com plots
     if record_data:
         t_sec = t * dt
         com_hist_t.append(t_sec)
@@ -169,60 +154,55 @@ for t in range(freq*sim_time):
         com_hist_y.append(float(com2[1]))
         com_hist_z.append(float(com2[2]))
     
-    z = 0.03  # tiny lift so it’s visible above the plane
-    p.resetBasePositionAndOrientation(com_prev, [com1[0], com1[1], z], [0,0,0,1])
-    #p.resetBasePositionAndOrientation(com_now,  [com2[0], com2[1], z], [0,0,0,1])
+    p.resetBasePositionAndOrientation(com_prev, [com1[0], com1[1], 0.03], [0,0,0,1])
     com1 = com2
 
     # virtual mechanism calcs
     # get q1 and q2
-    q0 = p.getJointState(robot, 0)[0]
     q1 = p.getJointState(robot, 1)[0]
     q2 = p.getJointState(robot, 2)[0]
-
+    
+    # find x1, x2 and com in terms of q1 and q2
+    # assume base position and orientation is measured
     pos, orn = p.getBasePositionAndOrientation(robot)
     orn2 = p.getEulerFromQuaternion(orn)
     q0 = orn2[2]
-    # q1 = q1 + orn2[2]
-    # q2 = q2 + orn2[2]
 
-    com = [0.25 + 0.15*np.cos(q1) + 0.05*np.cos(q1 + q2), 
-            0.15*np.sin(q1) + 0.05*np.sin(q1 + q2)]
+    # x1 in world frame
+    x1 = np.array(pos)
+
+    # x2 in base frame
+    x2 = [-(0.3*np.sin(q1) + 0.3*np.sin(q1 + q2)), 
+                0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2)]
     
-    # due to urdf coordinates (x, y, z) --> (-y, x, z)
-    com = [-com[1], com[0], 0.03]
-    p.resetBasePositionAndOrientation(com_now,  com, [0,0,0,1])
-
-    # find x1 and x2 in terms of q1 and q2
-    x1 = com1 - np.array(com)
-
-    pos, orn = p.getBasePositionAndOrientation(robot)
-    orn2 = p.getEulerFromQuaternion(orn)
-
-    t_sec = t * dt
-    t_hist.append(t_sec)
-    q0_hist.append(q0) 
-    q1_hist.append(q1)
-    q2_hist.append(q2) 
-    orn_hist.append(orn2[2])
-
-    # rotation correction
-    #q1 = q1 + orn2[2]
-    #q2 = q2 + orn2[2]
-    x0 = np.array(pos)
+    # com in base frame
+    com = [-(0.15*np.sin(q1) + 0.05*np.sin(q1 + q2)), 
+           0.25 + 0.15*np.cos(q1) + 0.05*np.cos(q1 + q2)]
     
+    # vectors
+    x1 = np.array([[x1[0]], [x1[1]], [0.03]])
+    x2 = np.array([[x2[0]], [x2[1]], [0.03], [1]])
+    com = np.array([[com[0]], [com[1]], [0.03], [1]])
 
-    x2 = x0 + [-(0.3*np.sin(q1 + q0) + 0.3*np.sin(q1 + q2 + 2*q0)), 
-                0.3 + 0.3*np.cos(q1 + q0) + 0.3*np.cos(q1 + q2 + 2*q0), 0]
+    # base frame to world transformation matrix (4x4)
+    T02 = np.array([[np.cos(q0), -np.sin(q0), 0, x1.flatten()[0]],
+                 [np.sin(q0), np.cos(q0), 0, x1.flatten()[1]], 
+                 [0, 0, 1, 0],
+                 [0, 0, 0, 1]])
     
-    # debug x1 and x2
-    x1_pt = [x1[0], x1[1], x1[2]]
-    x1_pt = x0
-    x2_pt = [x2[0], x2[1], x2[2]]
-    p.addUserDebugLine(x1_pt, x2_pt, [0, 0, 0], lineWidth=1, lifeTime=0, replaceItemUniqueId=line_id)   
+    # x2 and com to world vectors (4x1)
+    x2w = np.matmul(T02, x2)
+    comw = np.matmul(T02, com)
 
-    x1 = np.array([[x0[0]], [x0[1]]])
-    x2 = np.array([[x2[0]], [x2[1]]])
+    # shorten vectors (3x1)
+    x2 = x2w[:-1]
+    com = comw[:-1]
+    p.resetBasePositionAndOrientation(com_now,  com.flatten(), [0,0,0,1])
+    p.addUserDebugLine(x1.flatten(), x2.flatten(), [0, 0, 0], 1, 0, replaceItemUniqueId=line_id)
+
+    # shorten vectors (2x1)
+    x1 = x1[:-1]
+    x2 = x2[:-1]
 
     # define f1 and f2
     k = 5
@@ -245,7 +225,6 @@ for t in range(freq*sim_time):
     p.setJointMotorControlArray(robot, [1, 2], p.TORQUE_CONTROL, forces = t.flatten())
 
     p.stepSimulation()
-    time.sleep(2/1200)
 
 if record_data:
     vid.close()
@@ -263,7 +242,7 @@ if record_data:
 
     # recenter around mean COM
     x_mean, y_mean = np.mean(x), np.mean(y)
-    span = 0.15
+    span = 0.05
     ax.set_xlim(x_mean - span, x_mean + span)
     ax.set_ylim(y_mean - span, y_mean + span)
 
@@ -295,24 +274,3 @@ if record_data:
 
 else:
     p.disconnect()
-
-# fig, axs = plt.subplots(5, 1, sharex=True, figsize=(8, 8))
-
-# axs[0].plot(t_hist, np.asarray(orn_hist)*(180/np.pi))
-# axs[0].set_ylabel('base [deg]')
-
-# axs[1].plot(t_hist, np.asarray(q1_hist)*(180/np.pi))
-# axs[1].set_ylabel('q1 [deg]')
-
-# axs[2].plot(t_hist, np.asarray(q2_hist)*(180/np.pi))
-# axs[2].set_ylabel('q2 [deg]')
-
-# axs[3].plot(t_hist, (np.asarray(q1_hist)+np.array(orn_hist))*(180/np.pi))
-# axs[3].set_ylabel('q1 + orn [deg]')
-
-# axs[4].plot(t_hist, (np.asarray(q2_hist)+np.asarray(orn_hist))*(180/np.pi))
-# axs[4].set_ylabel('q2 + orn [deg]')
-# axs[4].set_xlabel('time [s]')
-
-# plt.tight_layout()
-# plt.show()
