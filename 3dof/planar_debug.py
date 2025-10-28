@@ -67,7 +67,7 @@ com_prev = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1,
                              baseVisualShapeIndex=vis_blue, basePosition=com1)
 
 
-for t in range(2):
+for t in range(freq*sim_time):
     link_tot = (0, 0, 0)
     for i in range(p.getNumJoints(robot)):
         link_tot = np.add(link_tot, p.getLinkState(robot, i)[0])
@@ -114,7 +114,7 @@ for t in range(2):
     # shorten vectors (3x1)
     x2 = x2w[:-1]
     com = comw[:-1]
-    p.resetBasePositionAndOrientation(com_now,  com, [0,0,0,1])
+    p.resetBasePositionAndOrientation(com_now,  com.flatten(), [0,0,0,1])
     p.addUserDebugLine(x1.flatten(), x2.flatten(), [0, 0, 0], 1, 0, replaceItemUniqueId=line_id)
 
 
@@ -124,7 +124,8 @@ for t in range(2):
     f2 = k*(x2 - x1)
     
     # apply force
-    
+    p.applyExternalForce(robot, 0, f1.flatten(), x1.flatten(), p.WORLD_FRAME)
+    p.applyExternalForce(robot, 2, f2.flatten(), x2.flatten(), p.WORLD_FRAME)    
     
     p.stepSimulation()
 

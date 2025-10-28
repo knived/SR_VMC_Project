@@ -9,6 +9,10 @@ from datetime import datetime
 import time
 
 # terminal inputs
+control = input("Torque or force control? [t/f]: ").strip().lower()
+while control not in ("t", "f"):
+    control = input("Please type t or f: ").strip().lower()
+
 ans = input("Record data? [y/n]: ").strip().lower()
 while ans not in ("y", "n"):
     ans = input("Please type y or n: ").strip().lower()
@@ -208,21 +212,32 @@ for t in range(freq*sim_time):
     k = 5
     f1 = k*(x1 - x2)
     f2 = k*(x2 - x1)
-    # find t1 and t2
-    dx1dq1 = [0.15*np.cos(q1) + 0.05*np.cos(q1 + q2), 
-                0.15*np.sin(q1) - 0.05*np.sin(q1 + q2)]
-    dx1dq2 = [0.05*np.cos(q1 + q2), 0.05*np.sin(q1 +q2)]
-    dh1dqT = np.array([dx1dq1, dx1dq2])
 
-    dx2dq1 = dx1dq1 + np.array([-0.3*np.cos(q1) - 0.3*np.cos(q1 + q2),
-                        -0.3*np.sin(q1) - 0.3*np.sin(q1 + q2)])
-    dx2dq2 = dx1dq2 + np.array([-0.3*np.cos(q1 + q2), -0.3*np.sin(q1 +q2)])
-    dh2dqT = np.array([dx2dq1, dx2dq2])
+    if control == "t":
+        # find t1 and t2
+        dx1dq1 = [0.15*np.cos(q1) + 0.05*np.cos(q1 + q2), 
+                    0.15*np.sin(q1) - 0.05*np.sin(q1 + q2)]
+        dx1dq2 = [0.05*np.cos(q1 + q2), 0.05*np.sin(q1 +q2)]
+        dh1dqT = np.array([dx1dq1, dx1dq2])
 
-    t = np.matmul(dh1dqT, f1) + np.matmul(dh2dqT, f2)
+        dx2dq1 = dx1dq1 + np.array([-0.3*np.cos(q1) - 0.3*np.cos(q1 + q2),
+                            -0.3*np.sin(q1) - 0.3*np.sin(q1 + q2)])
+        dx2dq2 = dx1dq2 + np.array([-0.3*np.cos(q1 + q2), -0.3*np.sin(q1 +q2)])
+        dh2dqT = np.array([dx2dq1, dx2dq2])
 
-    # control motors
-    p.setJointMotorControlArray(robot, [1, 2], p.TORQUE_CONTROL, forces = t.flatten())
+        t = np.matmul(dh1dqT, f1) + np.matmul(dh2dqT, f2)
+
+        # control motors
+        p.setJointMotorControlArray(robot, [1, 2], p.TORQUE_CONTROL, forces = t.flatten())
+    elif control == "f":
+        f1 = np.vstack((f1, [0]))
+        f2 = np.vstack((f2, [0]))
+        x1 = np.vstack((x1, [0.03]))
+        x2 = np.vstack((x2, [0.03]))
+        p.applyExternalForce(robot, 0, f1.flatten(), x1.flatten(), p.WORLD_FRAME)
+        p.applyExternalForce(robot, 2, f2.flatten(), x2.flatten(), p.WORLD_FRAME) 
+    else:
+        break 
 
     p.stepSimulation()
 
