@@ -2,6 +2,7 @@ import os
 import pybullet as p
 import pybullet_data
 import numpy as np
+import numdifftools as nd
 import imageio_ffmpeg
 import matplotlib.pyplot as plt
 import os
@@ -118,7 +119,7 @@ if record_data:
     com_hist_y = []  
     com_hist_z = []
 
-dt = 1/ 1200
+dt = 1/ 2400
 freq = int(1 / dt)
 p.setTimeStep(dt)
 
@@ -126,6 +127,12 @@ p.setTimeStep(dt)
 x1_pt = [0, 0, 0]
 x2_pt = [0, 0, 0]
 line_id = p.addUserDebugLine(x1_pt, x2_pt, [1, 0, 0], lineWidth=2, lifeTime=0)
+
+t_hist = []
+q0_hist = []   
+q1_hist = []
+q2_hist = []  
+orn_hist = []
 
 for t in range(freq*sim_time):
     #camera
@@ -171,15 +178,21 @@ for t in range(freq*sim_time):
     pos, orn = p.getBasePositionAndOrientation(robot)
     orn2 = p.getEulerFromQuaternion(orn)
     q0 = orn2[2]
+    t_sec = t * dt
+    t_hist.append(t_sec)
+    q0_hist.append(q0) 
+    q1_hist.append(q1)
+    q2_hist.append(q2) 
+    orn_hist.append(orn2[2])
 
     # x1 in world frame
     x1 = np.array(pos)
 
-    # x2 in base frame
+    # x2 in x1 frame
     x2 = [-(0.3*np.sin(q1) + 0.3*np.sin(q1 + q2)), 
                 0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2)]
     
-    # com in base frame
+    # com in x1 frame
     com = [-(0.15*np.sin(q1) + 0.05*np.sin(q1 + q2)), 
            0.25 + 0.15*np.cos(q1) + 0.05*np.cos(q1 + q2)]
     
@@ -188,7 +201,7 @@ for t in range(freq*sim_time):
     x2 = np.array([[x2[0]], [x2[1]], [0.03], [1]])
     com = np.array([[com[0]], [com[1]], [0.03], [1]])
 
-    # base frame to world transformation matrix (4x4)
+    # x1 frame to world transformation matrix (4x4)
     T02 = np.array([[np.cos(q0), -np.sin(q0), 0, x1.flatten()[0]],
                  [np.sin(q0), np.cos(q0), 0, x1.flatten()[1]], 
                  [0, 0, 1, 0],
@@ -209,25 +222,85 @@ for t in range(freq*sim_time):
     x2 = x2[:-1]
 
     # define f1 and f2
-    k = 5
-    f1 = k*(x1 - x2)
-    f2 = k*(x2 - x1)
+    shape = "C"
+    if shape == "line":
+        k = 5
+        f1 = k*(x1 - x2)
+        f2 = k*(x2 - x1)
+    elif shape == "C":
+        k = -5
+        ext = x1 - x2
+        ext_mag = np.linalg.norm(ext)
+        ext_hat = ext / ext_mag
+        ext_mid = x1 + x2 / 2
+        x01 = ext_mid + (0.15 * ext_hat)
+        x02 = ext_mid - (0.15 * ext_hat)
+        f1 = k*(x1 - x01)
+        f2 = k*(x2 - x02)
+    else:
+        print("shape error") 
+        p.disconnect()
 
     if control == "t":
-        # find t1 and t2
-        dx1dq1 = [0.15*np.cos(q1) + 0.05*np.cos(q1 + q2), 
-                    0.15*np.sin(q1) - 0.05*np.sin(q1 + q2)]
-        dx1dq2 = [0.05*np.cos(q1 + q2), 0.05*np.sin(q1 +q2)]
-        dh1dqT = np.array([dx1dq1, dx1dq2])
+        jac = "analytical"
+        if jac == "analytical":
+            # find t1 and t2
+            # dx1dq1 = [0.15*np.cos(q1) + 0.05*np.cos(q1 + q2), 
+            #             0.15*np.sin(q1) - 0.05*np.sin(q1 + q2)]
+            # dx1dq2 = [0.05*np.cos(q1 + q2), 0.05*np.sin(q1 +q2)]
+            # dh1dqT = np.array([dx1dq1, dx1dq2])
 
-        dx2dq1 = dx1dq1 + np.array([-0.3*np.cos(q1) - 0.3*np.cos(q1 + q2),
-                            -0.3*np.sin(q1) - 0.3*np.sin(q1 + q2)])
-        dx2dq2 = dx1dq2 + np.array([-0.3*np.cos(q1 + q2), -0.3*np.sin(q1 +q2)])
-        dh2dqT = np.array([dx2dq1, dx2dq2])
+            dx2dq1 = np.array([-0.3*np.cos(q1) - 0.3*np.cos(q1 + q2),
+                                -0.3*np.sin(q1) - 0.3*np.sin(q1 + q2)])
+            dx2dq2 = np.array([-0.3*np.cos(q1 + q2), -0.3*np.sin(q1 +q2)])
+            dh2dqT = np.array([dx2dq1, dx2dq2])
 
-        t = np.matmul(dh1dqT, f1) + np.matmul(dh2dqT, f2)
+            R02 = [[np.cos(q0), -np.sin(q0)],
+                 [np.sin(q0), np.cos(q0)]]
+            J2 = np.matmul(R02, dh2dqT.T)
 
-        # control motors
+            # control motors
+            #t = np.matmul(dh1dqT, f1) + np.matmul(dh2dqT, f2)
+            t = np.matmul(J2.T, f2)
+
+        elif jac == "numerical":
+            def x1_func(q):
+                pos, orn = p.getBasePositionAndOrientation(robot)
+                return np.array(pos)[:-1]
+            def x2_func(q):
+                q1 = q[0]
+                q2 = q[1]
+                pos, orn = p.getBasePositionAndOrientation(robot)
+                orn2 = p.getEulerFromQuaternion(orn)
+                q0 = orn2[2]
+
+                x1 = np.array(pos)
+                x2 = [-(0.3*np.sin(q1) + 0.3*np.sin(q1 + q2)), 
+                         0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2)]
+                
+                
+                x1 = np.array([[x1[0]], [x1[1]], [0.03]])
+                x2 = np.array([[x2[0]], [x2[1]], [0.03], [1]])
+                
+                T02 = np.array([[np.cos(q0), -np.sin(q0), 0, x1.flatten()[0]],
+                 [np.sin(q0), np.cos(q0), 0, x1.flatten()[1]], 
+                 [0, 0, 1, 0],
+                 [0, 0, 0, 1]])
+                x2w = np.matmul(T02, x2)
+
+                x2 = x2w[:-2]
+                return x2.flatten()
+            
+            # J1 = nd.Jacobian(x1_func)([q1, q2])
+            # print(J1)
+            J2 = nd.Jacobian(x2_func)([q1, q2])
+            #print(J2)
+
+            t = np.matmul(J2.T, f2)
+        else:
+            print("jacobian error") 
+            p.disconnect()
+
         p.setJointMotorControlArray(robot, [1, 2], p.TORQUE_CONTROL, forces = t.flatten())
     elif control == "f":
         f1 = np.vstack((f1, [0]))
@@ -237,7 +310,8 @@ for t in range(freq*sim_time):
         p.applyExternalForce(robot, 0, f1.flatten(), x1.flatten(), p.WORLD_FRAME)
         p.applyExternalForce(robot, 2, f2.flatten(), x2.flatten(), p.WORLD_FRAME) 
     else:
-        break 
+        print("control error") 
+        p.disconnect()
 
     p.stepSimulation()
 
@@ -289,3 +363,17 @@ if record_data:
 
 else:
     p.disconnect()
+
+# fig, axs = plt.subplots(3, 1, sharex=True, figsize=(8, 8))
+
+# axs[0].plot(t_hist, np.asarray(orn_hist)*(180/np.pi))
+# axs[0].set_ylabel('base [deg]')
+
+# axs[1].plot(t_hist, np.asarray(q1_hist)*(180/np.pi))
+# axs[1].set_ylabel('q1 [deg]')
+
+# axs[2].plot(t_hist, np.asarray(q2_hist)*(180/np.pi))
+# axs[2].set_ylabel('q2 [deg]')
+
+# plt.tight_layout()
+# plt.show()
