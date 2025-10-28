@@ -54,7 +54,7 @@ flags = (
     p.URDF_USE_SELF_COLLISION |
     p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT  # or INCLUDE_PARENT if needed
 )
-robot = p.loadURDF("3dof/planar_real.urdf", useFixedBase=False, flags=flags)
+robot = p.loadURDF("3dof/urdf/planar_real.urdf", useFixedBase=False, flags=flags)
 
 # set intial position
 p.resetJointState(robot, 1, 3.14/4)

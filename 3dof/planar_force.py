@@ -19,7 +19,7 @@ flags = (
     p.URDF_USE_SELF_COLLISION |
     p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT  # or INCLUDE_PARENT if needed
 )
-robot = p.loadURDF("3dof/planar_real.urdf", useFixedBase=False, flags=flags)
+robot = p.loadURDF("3dof/urdf/planar_real.urdf", useFixedBase=False, flags=flags)
 
 # get joint and link info
 # for i in range(0, p.getNumJoints(robot)):
@@ -115,22 +115,16 @@ for t in range(2):
     x2 = x2w[:-1]
     com = comw[:-1]
     p.resetBasePositionAndOrientation(com_now,  com, [0,0,0,1])
+    p.addUserDebugLine(x1.flatten(), x2.flatten(), [0, 0, 0], 1, 0, replaceItemUniqueId=line_id)
+
 
     # define f1 and f2
     k = 5
     f1 = k*(x1 - x2)
     f2 = k*(x2 - x1)
-    p.addUserDebugLine(x1.flatten(), x2.flatten(), [0, 0, 0], 1, 1)
-
-    time.sleep(3)
+    
     # apply force
-    startPos, startOrn = p.getBasePositionAndOrientation(robot)
-    endPos = [0.10865538, -0.00479139, -0.00014949] 
-    endOrn = (6.695681063754675e-05, 0.00034720412585835883, 0.3141972285100262, 0.9493576652467177)
-    # set intial position
-    p.resetJointState(robot, 1, 0.8)
-    p.resetJointState(robot, 2, 1.2)
-    p.resetBasePositionAndOrientation(robot, endPos, endOrn)
+    
     
     p.stepSimulation()
 
