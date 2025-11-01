@@ -364,6 +364,7 @@ if record_data:
 else:
     p.disconnect()
 
+# plot torque and base angles for debugging
 # fig, axs = plt.subplots(3, 1, sharex=True, figsize=(8, 8))
 
 # axs[0].plot(t_hist, np.asarray(orn_hist)*(180/np.pi))

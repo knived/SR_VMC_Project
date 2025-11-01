@@ -68,6 +68,7 @@ com_prev = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1,
 
 
 for t in range(freq*sim_time):
+    test = "world_force"
     link_tot = (0, 0, 0)
     for i in range(p.getNumJoints(robot)):
         link_tot = np.add(link_tot, p.getLinkState(robot, i)[0])
@@ -79,54 +80,121 @@ for t in range(freq*sim_time):
     q1 = p.getJointState(robot, 1)[0]
     q2 = p.getJointState(robot, 2)[0]
     
-    # find x1, x2 and com in terms of q1 and q2
-    # assume base position and orinetation is measured
-    pos, orn = p.getBasePositionAndOrientation(robot)
-    orn2 = p.getEulerFromQuaternion(orn)
-    q0 = orn2[2]
+    if test == "world_force":
+        # find x1, x2 and com in terms of q1 and q2
+        # assume base position and orinetation is measured
+        pos, orn = p.getBasePositionAndOrientation(robot)
+        orn2 = p.getEulerFromQuaternion(orn)
+        q0 = orn2[2]
 
-    # x1 in world frame
-    x1 = np.array(pos)
+        # x1 in world frame
+        x1 = np.array(pos)
 
-    # x2 in base frame
-    x2 = [-(0.3*np.sin(q1) + 0.3*np.sin(q1 + q2)), 
-                0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2)]
+        # x2 in base frame
+        x2 = [-(0.3*np.sin(q1) + 0.3*np.sin(q1 + q2)), 
+                    0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2)]
+        
+        # com in base frame
+        com = [-(0.15*np.sin(q1) + 0.05*np.sin(q1 + q2)), 
+            0.25 + 0.15*np.cos(q1) + 0.05*np.cos(q1 + q2)]
+        
+        # vectors
+        x1 = np.array([[x1[0]], [x1[1]], [0.03]])
+        x2 = np.array([[x2[0]], [x2[1]], [0.03], [1]])
+        com = np.array([[com[0]], [com[1]], [0.03], [1]])
+
+        # base frame to world transformation matrix (4x4)
+        T02 = np.array([[np.cos(q0), -np.sin(q0), 0, float(x1[0])],
+                    [np.sin(q0), np.cos(q0), 0, float(x1[1])], 
+                    [0, 0, 1, 0],
+                    [0, 0, 0, 1]])
+        
+        # x2 and com to world vectors (4x1)
+        x2w = np.matmul(T02, x2)
+        comw = np.matmul(T02, com)
+
+        # shorten vectors (3x1)
+        x2 = x2w[:-1]
+        com = comw[:-1]
+        p.resetBasePositionAndOrientation(com_now,  com.flatten(), [0,0,0,1])
+        p.addUserDebugLine(x1.flatten(), x2.flatten(), [0, 0, 0], 1, 0, replaceItemUniqueId=line_id)
+
+        # define f1 and f2
+        shape = "C"
+        if shape == "line":
+            k = 5
+            f1 = k*(x1 - x2)
+            f2 = k*(x2 - x1)
+        elif shape == "C":
+            k = -5
+            ext = x1 - x2
+            ext_mag = np.linalg.norm(ext)
+            ext_hat = ext / ext_mag
+            ext_mid = x1 + x2 / 2
+            x01 = ext_mid + (0.15 * ext_hat)
+            x02 = ext_mid - (0.15 * ext_hat)
+            f1 = k*(x1 - x01)
+            f2 = k*(x2 - x02)
+        else:
+            print("shape error") 
+            p.disconnect()
+        
+        # apply force
+        p.applyExternalForce(robot, 0, f1.flatten(), x1.flatten(), p.WORLD_FRAME)
+        p.applyExternalForce(robot, 2, f2.flatten(), x2.flatten(), p.WORLD_FRAME)
+    if test == "base_torque":
+        com = [0.25 + 0.15*np.cos(q1) + 0.05*np.cos(q1 + q2), 
+            0.15*np.sin(q1) + 0.05*np.sin(q1 + q2)]
     
-    # com in base frame
-    com = [-(0.15*np.sin(q1) + 0.05*np.sin(q1 + q2)), 
-           0.25 + 0.15*np.cos(q1) + 0.05*np.cos(q1 + q2)]
-    
-    # vectors
-    x1 = np.array([[x1[0]], [x1[1]], [0.03]])
-    x2 = np.array([[x2[0]], [x2[1]], [0.03], [1]])
-    com = np.array([[com[0]], [com[1]], [0.03], [1]])
+        # due to urdf coordinates (x, y, z) --> (-y, x, z)
+        com = [-com[1], com[0], 0.03]
 
-    # base frame to world transformation matrix (4x4)
-    T02 = np.array([[np.cos(q0), -np.sin(q0), 0, float(x1[0])],
-                 [np.sin(q0), np.cos(q0), 0, float(x1[1])], 
-                 [0, 0, 1, 0],
-                 [0, 0, 0, 1]])
-    
-    # x2 and com to world vectors (4x1)
-    x2w = np.matmul(T02, x2)
-    comw = np.matmul(T02, com)
+        # find x1 and x2 in terms of q1 and q2
+        x1 = com1 - com
+        x2 = x1 + [-(0.3*np.sin(q1) + 0.3*np.sin(q1 + q2)), 
+                    0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2), 0]
+        p.resetBasePositionAndOrientation(com_now,  com, [0,0,0,1])
+        p.addUserDebugLine(x1.flatten(), x2.flatten(), [0, 0, 0], 1, 0, replaceItemUniqueId=line_id)
 
-    # shorten vectors (3x1)
-    x2 = x2w[:-1]
-    com = comw[:-1]
-    p.resetBasePositionAndOrientation(com_now,  com.flatten(), [0,0,0,1])
-    p.addUserDebugLine(x1.flatten(), x2.flatten(), [0, 0, 0], 1, 0, replaceItemUniqueId=line_id)
+        x1 = np.array([[x1[0]], [x1[1]]])
+        x2 = np.array([[x2[0]], [x2[1]]])
 
+        # define f1 and f2
+        shape = "C"
+        if shape == "line":
+            k = 5
+            f1 = k*(x1 - x2)
+            f2 = k*(x2 - x1)
+        elif shape == "C":
+            k = -5
+            ext = x1 - x2
+            ext_mag = np.linalg.norm(ext)
+            ext_hat = ext / ext_mag
+            ext_mid = x1 + x2 / 2
+            x01 = ext_mid + (0.15 * ext_hat)
+            x02 = ext_mid - (0.15 * ext_hat)
+            f1 = k*(x1 - x01)
+            f2 = k*(x2 - x02)
+        else:
+            print("shape error") 
+            p.disconnect()
 
-    # define f1 and f2
-    k = 5
-    f1 = k*(x1 - x2)
-    f2 = k*(x2 - x1)
-    
-    # apply force
-    p.applyExternalForce(robot, 0, f1.flatten(), x1.flatten(), p.WORLD_FRAME)
-    p.applyExternalForce(robot, 2, f2.flatten(), x2.flatten(), p.WORLD_FRAME)    
+        # find t1 and t2
+        dx1dq1 = [0.15*np.cos(q1) + 0.05*np.cos(q1 + q2), 
+                    0.15*np.sin(q1) - 0.05*np.sin(q1 + q2)]
+        dx1dq2 = [0.05*np.cos(q1 + q2), 0.05*np.sin(q1 +q2)]
+        dh1dqT = np.array([dx1dq1, dx1dq2])
+
+        dx2dq1 = np.array([-0.3*np.cos(q1) - 0.3*np.cos(q1 + q2),
+                            -0.3*np.sin(q1) - 0.3*np.sin(q1 + q2)])
+        dx2dq2 = np.array([-0.3*np.cos(q1 + q2), -0.3*np.sin(q1 +q2)])
+        dh2dqT = np.array([dx2dq1, dx2dq2])
+
+        # control motors
+        t = np.matmul(dh1dqT, f1) + np.matmul(dh2dqT, f2)
+        p.setJointMotorControlArray(robot, [1, 2], p.TORQUE_CONTROL, forces = t.flatten())  
     
     p.stepSimulation()
+    # time.sleep(3/1200)
 
 p.disconnect()

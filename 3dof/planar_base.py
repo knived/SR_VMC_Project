@@ -144,7 +144,7 @@ for t in range(1200*15):
     com = [-com[1], com[0]]
 
     # find x1 and x2 in terms of q1 and q2
-    x1 = com1 - com
+    x1 = com1[:-1] - com
     x2 = x1 + [-(0.3*np.sin(q1) + 0.3*np.sin(q1 + q2)), 
                 0.3 + 0.3*np.cos(q1) + 0.3*np.cos(q1 + q2)]
     
